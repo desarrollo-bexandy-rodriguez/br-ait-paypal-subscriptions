@@ -47,6 +47,10 @@ use PayPal\EBLBaseComponents\ScheduleDetailsType;
 use PayPal\PayPalAPI\CreateRecurringPaymentsProfileReq;
 use PayPal\PayPalAPI\CreateRecurringPaymentsProfileRequestType;
 
+use PayPal\EBLBaseComponents\ManageRecurringPaymentsProfileStatusRequestDetailsType;
+use PayPal\PayPalAPI\ManageRecurringPaymentsProfileStatusRequestType;
+use PayPal\PayPalAPI\ManageRecurringPaymentsProfileStatusReq;
+
 use PayPal\IPN\PPIPNMessage;
 
 class AitPaypalSubscriptions {
@@ -259,8 +263,7 @@ class AitPaypalSubscriptions {
 		return $this->version;
 	}
 
-	public static function getInstance()
-	{
+	public static function getInstance() {
 		if (null == self::$instance) {
 			self::$instance = new self;
 			self::$instance->setOptions();
@@ -271,8 +274,7 @@ class AitPaypalSubscriptions {
 		return self::$instance;
 	}
 
-	private function setOptions()
-	{
+	private function setOptions() {
 		if (!function_exists('aitOptions')) {
 			throw new BR_AIT_Paypal_Subscriptions_Exception("PayPal plugin is compatible only with AIT framework 2.0");
 		}
@@ -289,8 +291,7 @@ class AitPaypalSubscriptions {
 		}
 	}
 
-	private function setLogging()
-	{
+	private function setLogging() {
 		if ($this->options->logging) {
 			add_action('ait-paypal-subscriptions-notification', function ($message) {
 				AitPaypalSubscriptions::log($message, 'NOTIFICATION');
@@ -298,8 +299,7 @@ class AitPaypalSubscriptions {
 		}
 	}
 
-	public static function log($message, $title = '')
-	{
+	public static function log($message, $title = '') {
 		$message = print_r($message, true);
 		$title = (!empty($title)) ? " - " . $title : "";
 		$message = date("Y-m-d H:i:s") . $title . "\n\n" . $message . "\n";
@@ -307,8 +307,7 @@ class AitPaypalSubscriptions {
 		error_log($message, 3, $file);
 	}
 
-	public function handleNotification()
-	{
+	public function handleNotification() {
 		if (isset($_GET[self::$getParameterName]) && $_GET[self::$getParameterName] == 'notification' && file_get_contents('php://input')) {
 			try {
 				$config = $this->options->sandboxMode ? array("mode" => "sandbox") : array("mode" => "live");
@@ -360,8 +359,7 @@ class AitPaypalSubscriptions {
 		}
 	}
 
-	public function handleReturn()
-	{
+		public function handleReturn() {
 		if (isset($_GET[self::$getParameterName]) && $_GET[self::$getParameterName] == 'return' && isset($_GET['token'])) {
 			$token = $_GET['token'];
 			$agreement = get_transient($temporaryDataPrefix.$token);
@@ -389,17 +387,20 @@ class AitPaypalSubscriptions {
 					$paymentBillingPeriod->BillingPeriod = 'Day';
 					$paymentBillingPeriod->Amount = new BasicAmountType($currencyCode, $agreement->amount);
 
-					$trialBillingPeriod =  new BillingPeriodDetailsType();
-					$trialBillingPeriod->BillingFrequency = $agreement->trialTime;;
-					$trialBillingPeriod->BillingPeriod = 'Day';
-					$trialBillingPeriod->TotalBillingCycles = 1;
-					$trialBillingPeriod->Amount = new BasicAmountType($currencyCode, 0);
+					if ($agreement->trialTime > 0) {
+						$trialBillingPeriod =  new BillingPeriodDetailsType();
+						$trialBillingPeriod->BillingFrequency = $agreement->trialTime;
+						$trialBillingPeriod->BillingPeriod = 'Day';
+						$trialBillingPeriod->TotalBillingCycles = 1;
+						$trialBillingPeriod->Amount = new BasicAmountType($currencyCode, 0);
+					}
 					
-
 					$scheduleDetails = new ScheduleDetailsType();
 					$scheduleDetails->Description = $agreement->description;
 					$scheduleDetails->PaymentPeriod = $paymentBillingPeriod;
-					$scheduleDetails->TrialPeriod  = $trialBillingPeriod;
+					if ($agreement->trialTime > 0) {
+						$scheduleDetails->TrialPeriod  = $trialBillingPeriod;
+					}
 					$createRPProfileRequestDetail->ScheduleDetails = $scheduleDetails;
 
 
@@ -431,8 +432,7 @@ class AitPaypalSubscriptions {
 		}
 	}
 
-	public function createAgreement($data, $agreement)
-	{
+	public function createAgreement($data, $agreement) {
 		try {
 			// Convert agreement array to object
 			$agreement = (object) $agreement;
@@ -488,6 +488,82 @@ class AitPaypalSubscriptions {
 		}
 	}
 
+		public function cancelPackage($data, $agreement) {
+		try {
+			/*
+			* The ManageRecurringPaymentsProfileStatus API operation cancels, suspends, or reactivates a recurring payments profile. 
+			*/
+						$manageRPPStatusReqestDetails = new ManageRecurringPaymentsProfileStatusRequestDetailsType();
+			/*
+			*  (Required) The action to be performed to the recurring payments profile. Must be one of the following:
+
+				Cancel – Only profiles in Active or Suspended state can be canceled.
+
+				Suspend – Only profiles in Active state can be suspended.
+
+				Reactivate – Only profiles in a suspended state can be reactivated.
+
+			*/
+			$manageRPPStatusReqestDetails->Action =  ucwords($data['operation']);
+			/*
+			* (Required) Recurring payments profile ID returned in the CreateRecurringPaymentsProfile response.
+			*/
+			$manageRPPStatusReqestDetails->ProfileID =  $data['recurring-payment-id'];
+
+			$manageRPPStatusReqest = new ManageRecurringPaymentsProfileStatusRequestType();
+			$manageRPPStatusReqest->ManageRecurringPaymentsProfileStatusRequestDetails = $manageRPPStatusReqestDetails;
+
+
+			$manageRPPStatusReq = new ManageRecurringPaymentsProfileStatusReq();
+			$manageRPPStatusReq->ManageRecurringPaymentsProfileStatusRequest = $manageRPPStatusReqest;
+
+			/*
+			* 	 ## Creating service wrapper object
+			Creating service wrapper object to make API call and loading
+			Configuration::getAcctAndConfig() returns array that contains credential and config parameters
+			*/
+			$api = $this->getApi();
+			try {
+				/* wrap API method calls on the service object with a try catch */
+				$manageRPPStatusResponse = $api->ManageRecurringPaymentsProfileStatus($manageRPPStatusReq);
+			} catch (Exception $ex) {
+				self::error($ex);
+			}
+
+			if(isset($manageRPPStatusResponse)) {
+				$this->subscriptionsCanceled($data);
+			} else {
+				// redirect back
+				$this->subscriptionsCanceled($data);
+				$redirect = home_url().'/?ait-notification=user-registration-error';
+				wp_safe_redirect( $redirect );
+				exit();
+			}
+	
+		} catch (Exception $e) {
+			self::error($e);
+		}
+	}
+
+	private function subscriptionsCanceled($payment) {
+		$data = $payment;
+		$user = new Wp_User($data['user']);
+		$packages = new ThemePackages();
+		$packageOptions = $packages->getPackageBySlug($data['package'])->getOptions();
+		$defaultRole = get_option('default_role');
+	
+		if($data['operation'] === 'cancel'){
+			$user->set_role($defaultRole);
+			if($packageOptions['trialTime'] != 0){
+				update_user_meta( $user->ID, 'trial_status', array('status' => 'canceled', 'payment_id' => $payment->recurring_payment_id) );
+				update_user_meta( $user->ID, 'package_status', array('status' => 'canceled', 'payment_id' => $payment->recurring_payment_id) );
+			} else {
+				update_user_meta( $user->ID, 'trial_status', array('status' => 'not set', 'payment_id' => $payment->recurring_payment_id) );
+				update_user_meta( $user->ID, 'package_status', array('status' => 'canceled', 'payment_id' => $payment->recurring_payment_id) );
+			}
+		}
+	}
+
 	private function getApi()
 	{
 		if (empty($this->api)) {
@@ -496,8 +572,7 @@ class AitPaypalSubscriptions {
 		return $this->api;
 	}
 
-	private function setApi()
-	{
+	private function setApi() {
 		if (empty($this->options)) {
 			throw new BR_AIT_Paypal_Subscriptions_Exception("Missing theme options for Paypal");
 		}
@@ -523,8 +598,7 @@ class AitPaypalSubscriptions {
 		return $api;
 	}
 
-	public static function error($message)
-	{
+	public static function error($message) {
 		if ($message instanceof Exception) {
 			$message = $message->getMessage();
 		} else {
