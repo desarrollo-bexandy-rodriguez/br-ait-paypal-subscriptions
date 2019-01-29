@@ -310,6 +310,7 @@ class AitPaypalSubscriptions {
 	public function handleNotification() {
 		if (isset($_GET[self::$getParameterName]) && $_GET[self::$getParameterName] == 'notification' && file_get_contents('php://input')) {
 			try {
+				AitPaypalSubscriptions::log('PHP: Notificacion IPN Recibida', 'TRACERT');
 				$config = $this->options->sandboxMode ? array("mode" => "sandbox") : array("mode" => "live");
 				if ($this->options->logging) {
 					$config = $config + array(
@@ -343,6 +344,7 @@ class AitPaypalSubscriptions {
 					$message->data = $profile->data;
 					switch ($transactionType) {
 						case 'recurring_payment':
+							AitPaypalSubscriptions::log('PHP: Transaccion-recurring_payment', 'TRACERT');
 							do_action('ait-paypal-subscriptions-payment-completed', $message);
 							break;
 						case 'recurring_payment_profile_created':
